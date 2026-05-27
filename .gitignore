@@ -26,3 +26,5 @@ musicdl_outputs/
 .DS_Store
 Thumbs.db
 *.log
+.musicdl_temp/
+*.bat
