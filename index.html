@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🎵 音乐下载器 - Web版</title>
-    <link rel="stylesheet" href="static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=2">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -23,42 +23,31 @@
                     <div class="source-selector">
                         <label>选择音乐源：</label>
                         <div class="source-chips" id="sourceChips">
-                            <label class="chip active">
-                                <input type="checkbox" value="NeteaseMusicClient" checked>
-                                <span>网易云</span>
-                            </label>
-                            <label class="chip">
-                                <input type="checkbox" value="QQMusicClient">
-                                <span>QQ音乐</span>
-                            </label>
-                            <label class="chip active">
-                                <input type="checkbox" value="KugouMusicClient" checked>
-                                <span>酷狗</span>
-                            </label>
-                            <label class="chip active">
-                                <input type="checkbox" value="KuwoMusicClient" checked>
-                                <span>酷我</span>
-                            </label>
-                            <label class="chip">
-                                <input type="checkbox" value="MiguMusicClient">
-                                <span>咪咕</span>
-                            </label>
+                            <p>加载中...</p>
                         </div>
                     </div>
 
-                    <div class="search-input-wrapper">
-                        <input type="text" id="searchInput" placeholder="输入歌曲名、歌手或关键词..." autocomplete="off">
-                        <button id="searchBtn" class="btn-search">
-                            <span class="btn-icon">🔍</span>
-                            <span class="btn-text">搜索</span>
-                        </button>
+                    <div class="search-controls">
+                        <div class="search-input-wrapper">
+                            <input type="text" id="searchInput" placeholder="输入歌曲名、歌手或关键词..." autocomplete="off">
+                            <button id="searchBtn" class="btn-search">
+                                <span class="btn-icon">🔍</span>
+                                <span class="btn-text">搜索</span>
+                            </button>
+                        </div>
+                        
+                        <div class="download-dir-selector">
+                            <label>下载目录：</label>
+                            <input type="text" id="downloadDir" readonly placeholder="默认下载到浏览器下载目录">
+                            <button id="browseDirBtn" class="btn-browse">📁 浏览...</button>
+                        </div>
                     </div>
                 </div>
             </section>
 
             <section class="results-section" id="resultsSection">
                 <div class="results-header">
-                    <h2>搜索结果</h2>
+                    <h2>搜索结果 <span id="resultCount" class="result-count"></span></h2>
                     <div class="results-actions">
                         <button id="selectAllBtn" class="btn-secondary" disabled>全选</button>
                         <button id="downloadSelectedBtn" class="btn-primary" disabled>
@@ -75,6 +64,16 @@
                     </div>
                 </div>
             </section>
+
+            <section class="downloads-section" id="downloadsSection">
+                <h2>下载进度</h2>
+                <div class="downloads-list" id="downloadsList">
+                    <div class="empty-state" id="downloadsEmpty">
+                        <div class="empty-icon">📥</div>
+                        <p>暂无下载任务</p>
+                    </div>
+                </div>
+            </section>
         </main>
 
         <div class="loading-overlay" id="loadingOverlay">
@@ -87,6 +86,507 @@
         <div class="toast-container" id="toastContainer"></div>
     </div>
 
-    <script src="static/app.js"></script>
+    <script>
+        const app = {
+            searchResults: [],
+            sources: [],
+            defaultSources: ['KuwoMusicClient'],
+            downloads: {},
+
+            async init() {
+                await this.loadSources();
+                this.bindEvents();
+                this.downloadDir = null;
+            },
+
+            async loadSources() {
+                try {
+                    const response = await fetch('/sources');
+                    const data = await response.json();
+                    this.sources = data.sources || [];
+                    this.renderSources();
+                } catch (error) {
+                    console.error('加载音乐源失败:', error);
+                    document.getElementById('sourceChips').innerHTML = '<p style="color:red">加载失败</p>';
+                }
+            },
+
+            renderSources() {
+                const container = document.getElementById('sourceChips');
+                container.innerHTML = this.sources.map(source => `
+                    <div class="chip ${this.defaultSources.includes(source.id) ? 'active' : ''}" 
+                         data-id="${source.id}"
+                         onclick="app.toggleSource(this)">
+                        <input type="checkbox" 
+                               value="${source.id}" 
+                               ${this.defaultSources.includes(source.id) ? 'checked' : ''}>
+                        <span>${source.name}</span>
+                    </div>
+                `).join('');
+            },
+
+            toggleSource(element) {
+                const checkbox = element.querySelector('input[type="checkbox"]');
+                const isActive = element.classList.contains('active');
+                
+                if (isActive) {
+                    element.classList.remove('active');
+                    checkbox.checked = false;
+                } else {
+                    element.classList.add('active');
+                    checkbox.checked = true;
+                }
+            },
+
+            bindEvents() {
+                document.getElementById('searchBtn').addEventListener('click', () => this.handleSearch());
+                
+                document.getElementById('searchInput').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        this.handleSearch();
+                    }
+                });
+
+                document.getElementById('selectAllBtn').addEventListener('click', () => this.toggleSelectAll());
+                document.getElementById('downloadSelectedBtn').addEventListener('click', () => this.downloadSelected());
+                document.getElementById('browseDirBtn').addEventListener('click', () => this.browseDirectory());
+            },
+
+            async browseDirectory() {
+                try {
+                    if ('showDirectoryPicker' in window) {
+                        const dirHandle = await window.showDirectoryPicker();
+                        document.getElementById('downloadDir').value = dirHandle.name;
+                        this.downloadDir = dirHandle;
+                    }
+                } catch (error) {
+                    console.log('目录选择取消');
+                }
+            },
+
+            getSelectedSources() {
+                const sources = [];
+                const checkboxes = document.querySelectorAll('#sourceChips input[type="checkbox"]');
+                checkboxes.forEach(checkbox => {
+                    if (checkbox.checked) {
+                        sources.push(checkbox.value);
+                    }
+                });
+                return sources;
+            },
+
+            async handleSearch() {
+                const keyword = document.getElementById('searchInput').value.trim();
+                
+                if (!keyword) {
+                    this.showToast('请输入搜索关键词', 'error');
+                    return;
+                }
+
+                const sources = this.getSelectedSources();
+                if (sources.length === 0) {
+                    this.showToast('请至少选择一个音乐源', 'error');
+                    return;
+                }
+
+                this.showLoading('正在搜索音乐...');
+                
+                try {
+                    const response = await fetch('/search', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            keyword: keyword,
+                            sources: sources
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.detail || '搜索请求失败');
+                    }
+
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        this.searchResults = data.results;
+                        this.renderSearchResults();
+                        this.showToast(`找到 ${data.count} 首歌曲`, 'success');
+                    } else {
+                        throw new Error(data.detail || '搜索失败');
+                    }
+                } catch (error) {
+                    console.error('搜索错误:', error);
+                    this.showToast('搜索失败: ' + error.message, 'error');
+                } finally {
+                    this.hideLoading();
+                }
+            },
+
+            renderSearchResults() {
+                const resultsList = document.getElementById('resultsList');
+                const emptyState = document.getElementById('emptyState');
+                const resultCount = document.getElementById('resultCount');
+
+                if (this.searchResults.length === 0) {
+                    resultsList.innerHTML = '';
+                    resultsList.appendChild(emptyState);
+                    emptyState.querySelector('p').textContent = '未找到相关歌曲';
+                    resultCount.textContent = '';
+                    document.getElementById('selectAllBtn').disabled = true;
+                    document.getElementById('downloadSelectedBtn').disabled = true;
+                    return;
+                }
+
+                resultCount.textContent = `(${this.searchResults.length}首)`;
+
+                resultsList.innerHTML = this.searchResults.map((song, index) => `
+                    <div class="song-item" data-index="${index}">
+                        <div class="song-checkbox">
+                            <input type="checkbox" id="song-${index}" class="song-check">
+                        </div>
+                        <div class="song-cover">
+                            ${song.cover_url ? 
+                                `<img src="${song.cover_url}" alt="封面" onerror="this.parentElement.innerHTML='🎵'">` : 
+                                '🎵'}
+                        </div>
+                        <div class="song-info">
+                            <div class="song-name" title="${song.song_name}">${song.song_name}</div>
+                            <div class="song-singer" title="${song.singers}">${song.singers}</div>
+                        </div>
+                        <div class="song-meta">
+                            <span class="song-format">${(song.ext || 'mp3').toUpperCase()}</span>
+                            <span class="song-size">${song.file_size || '--'}</span>
+                            <span class="song-duration">${song.duration || '--:--'}</span>
+                        </div>
+                        <div class="song-actions">
+                            <button class="btn-download" id="download-${index}" onclick="app.downloadSingle(${index})">
+                                ⬇️ 下载
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+
+                document.getElementById('selectAllBtn').disabled = false;
+                document.getElementById('downloadSelectedBtn').disabled = false;
+                
+                // 调试日志
+                console.log('[调试] 搜索结果:', this.searchResults);
+                if (this.searchResults && this.searchResults.length > 0) {
+                    console.log('[调试] 第一首歌:', this.searchResults[0]);
+                }
+            },
+
+            formatSize(size) {
+                if (!size || size === '未知' || size === '') return '--';
+                
+                const sizeStr = String(size).trim();
+                
+                if (sizeStr.match(/[a-zA-Z]/)) {
+                    return sizeStr;
+                }
+                
+                const num = parseFloat(sizeStr);
+                if (isNaN(num) || num <= 0) return '--';
+                
+                if (num < 1024) return num.toFixed(0) + ' B';
+                if (num < 1024 * 1024) return (num / 1024).toFixed(1) + ' KB';
+                if (num < 1024 * 1024 * 1024) return (num / (1024 * 1024)).toFixed(1) + ' MB';
+                return (num / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+            },
+
+            toggleSelectAll() {
+                const checkboxes = document.querySelectorAll('.song-check');
+                const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+                
+                checkboxes.forEach(checkbox => {
+                    checkbox.checked = !allChecked;
+                });
+
+                const btn = document.getElementById('selectAllBtn');
+                btn.textContent = allChecked ? '全选' : '取消全选';
+            },
+
+            getSelectedSongs() {
+                const selectedSongs = [];
+                const checkboxes = document.querySelectorAll('.song-check');
+                
+                checkboxes.forEach((checkbox, index) => {
+                    if (checkbox.checked) {
+                        selectedSongs.push({...this.searchResults[index], originalIndex: index});
+                    }
+                });
+
+                return selectedSongs;
+            },
+
+            async downloadSelected() {
+                const selectedSongs = this.getSelectedSongs();
+                
+                if (selectedSongs.length === 0) {
+                    this.showToast('请先选择要下载的歌曲', 'error');
+                    return;
+                }
+
+                this.showToast(`开始下载 ${selectedSongs.length} 首歌曲`, 'info');
+
+                selectedSongs.forEach((song, i) => {
+                    this.startDownload(song, song.originalIndex);
+                });
+            },
+
+            async downloadSingle(index) {
+                const song = this.searchResults[index];
+                this.startDownload(song, index);
+            },
+
+            startDownload(song, index) {
+                const btn = document.getElementById(`download-${index}`);
+                if (btn) {
+                    btn.disabled = true;
+                    btn.innerHTML = '⏳ 下载中...';
+                }
+
+                const downloadId = `download-${Date.now()}-${index}`;
+                this.downloads[downloadId] = {
+                    song_name: song.song_name,
+                    status: 'pending',
+                    progress: 0,
+                    btn: btn,
+                    index: index
+                };
+
+                this.renderDownloads();
+                this.performDownload(downloadId, song);
+            },
+
+            async performDownload(downloadId, song) {
+                try {
+                    this.updateDownloadStatus(downloadId, 'downloading', 0);
+                    
+                    const response = await fetch('/download', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            identifier: song.identifier,
+                            source: song.source,
+                            song_name: song.song_name,
+                            singers: song.singers,
+                            album: song.album,
+                            ext: song.ext || 'mp3',
+                            download_url: song.download_url,
+                            cover_url: song.cover_url,
+                            duration: song.duration,
+                            file_size: song.file_size
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.detail || '创建下载任务失败');
+                    }
+
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        await this.waitForDownloadAndStream(downloadId, data.task_id, song);
+                    } else {
+                        throw new Error(data.detail || '下载失败');
+                    }
+                } catch (error) {
+                    this.updateDownloadStatus(downloadId, 'failed', 0, error.message);
+                    this.showToast(`下载失败: ${song.song_name}`, 'error');
+                }
+            },
+
+            async waitForDownloadAndStream(downloadId, taskId, song) {
+                const maxAttempts = 60;
+                
+                for (let i = 0; i < maxAttempts; i++) {
+                    try {
+                        const response = await fetch(`/download/${taskId}`);
+                        const task = await response.json();
+
+                        if (task.status === 'completed') {
+                            this.updateDownloadStatus(downloadId, 'downloading', 50);
+                            await this.streamDownloadFile(downloadId, taskId, song);
+                            this.updateDownloadStatus(downloadId, 'completed', 100);
+                            this.showToast(`下载完成: ${song.song_name}`, 'success');
+                            return true;
+                        } else if (task.status === 'failed') {
+                            throw new Error(task.message);
+                        } else {
+                            const progress = Math.min(30 + (i / maxAttempts) * 20, 50);
+                            this.updateDownloadStatus(downloadId, 'downloading', progress);
+                        }
+
+                        await this.sleep(1000);
+                    } catch (error) {
+                        if (error.message && (error.message.includes('失败') || error.message.includes('错误'))) {
+                            throw error;
+                        }
+                    }
+                }
+
+                throw new Error('下载超时');
+            },
+
+            async streamDownloadFile(downloadId, taskId, song) {
+                try {
+                    console.log('[下载] 开始获取文件, taskId:', taskId);
+                    
+                    const response = await fetch(`/download/${taskId}/file`);
+                    console.log('[下载] 响应状态:', response.status, response.statusText);
+                    
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        console.error('[下载] 获取文件失败:', errorText);
+                        throw new Error('获取下载文件失败: ' + response.statusText);
+                    }
+
+                    this.updateDownloadStatus(downloadId, 'downloading', 80);
+
+                    const blob = await response.blob();
+                    console.log('[下载] Blob大小:', blob.size, '类型:', blob.type);
+                    
+                    const ext = (song.ext || 'mp3').toLowerCase();
+                    let mimeType = 'audio/mpeg';
+                    if (ext === 'flac') mimeType = 'audio/flac';
+                    else if (ext === 'm4a') mimeType = 'audio/mp4';
+                    else if (ext === 'wav') mimeType = 'audio/wav';
+                    else if (ext === 'ogg') mimeType = 'audio/ogg';
+                    
+                    const filename = song.song_name + ' - ' + song.singers + '.' + ext;
+                    console.log('[下载] 文件名:', filename);
+                    
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    a.style.display = 'none';
+                    document.body.appendChild(a);
+                    a.click();
+                    
+                    setTimeout(() => {
+                        window.URL.revokeObjectURL(url);
+                        a.remove();
+                        console.log('[下载] 清理完成');
+                    }, 100);
+                    
+                } catch (error) {
+                    console.error('[下载] 流式传输错误:', error);
+                    throw error;
+                }
+            },
+
+            updateDownloadStatus(downloadId, status, progress, message = '') {
+                if (this.downloads[downloadId]) {
+                    this.downloads[downloadId].status = status;
+                    this.downloads[downloadId].progress = progress;
+                    if (message) {
+                        this.downloads[downloadId].message = message;
+                    }
+                    this.renderDownloads();
+                }
+            },
+
+            renderDownloads() {
+                const downloadsList = document.getElementById('downloadsList');
+                const emptyState = document.getElementById('downloadsEmpty');
+                
+                const downloads = Object.entries(this.downloads);
+                
+                if (downloads.length === 0) {
+                    downloadsList.innerHTML = '';
+                    downloadsList.appendChild(emptyState);
+                    return;
+                }
+
+                downloadsList.innerHTML = downloads.map(([id, download]) => `
+                    <div class="download-item ${download.status}">
+                        <div class="download-info">
+                            <div class="download-name">${download.song_name}</div>
+                            <div class="download-status">
+                                ${this.getStatusText(download.status, download.progress)}
+                            </div>
+                            ${download.status === 'downloading' ? `
+                                <div class="download-progress-bar">
+                                    <div class="download-progress" style="width: ${download.progress}%"></div>
+                                </div>
+                            ` : ''}
+                        </div>
+                        <div class="download-icon">
+                            ${this.getStatusIcon(download.status)}
+                        </div>
+                    </div>
+                `).join('');
+            },
+
+            getStatusText(status, progress) {
+                switch(status) {
+                    case 'pending': return '等待下载...';
+                    case 'downloading': return `下载中 ${Math.round(progress)}%`;
+                    case 'completed': return '下载完成 ✓';
+                    case 'failed': return '下载失败 ✗';
+                    default: return status;
+                }
+            },
+
+            getStatusIcon(status) {
+                switch(status) {
+                    case 'pending': return '⏳';
+                    case 'downloading': return '📥';
+                    case 'completed': return '✅';
+                    case 'failed': return '❌';
+                    default: return '📄';
+                }
+            },
+
+            sleep(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            },
+
+            showLoading(message) {
+                const overlay = document.getElementById('loadingOverlay');
+                const text = document.getElementById('loadingText');
+                text.textContent = message;
+                overlay.classList.add('active');
+            },
+
+            hideLoading() {
+                const overlay = document.getElementById('loadingOverlay');
+                overlay.classList.remove('active');
+            },
+
+            showToast(message, type = 'info') {
+                const container = document.getElementById('toastContainer');
+                
+                const icons = {
+                    success: '✅',
+                    error: '❌',
+                    info: 'ℹ️'
+                };
+
+                const toast = document.createElement('div');
+                toast.className = `toast ${type}`;
+                toast.innerHTML = `
+                    <span class="toast-icon">${icons[type]}</span>
+                    <span class="toast-message">${message}</span>
+                `;
+
+                container.appendChild(toast);
+
+                setTimeout(() => {
+                    toast.remove();
+                }, 3000);
+            }
+        };
+
+        app.init();
+    </script>
 </body>
 </html>

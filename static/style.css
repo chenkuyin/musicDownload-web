@@ -122,6 +122,7 @@ body {
     cursor: pointer;
     transition: all 0.3s ease;
     user-select: none;
+    pointer-events: auto;
 }
 
 .chip:hover {
@@ -142,12 +143,14 @@ body {
 .chip span {
     font-size: 14px;
     font-weight: 500;
+    pointer-events: none;
 }
 
 .search-input-wrapper {
     display: flex;
     gap: 12px;
     max-width: 100%;
+    margin-bottom: 16px;
 }
 
 .search-input-wrapper input {
@@ -164,6 +167,53 @@ body {
     outline: none;
     border-color: var(--primary-color);
     box-shadow: 0 0 0 3px rgba(0, 120, 212, 0.1);
+}
+
+.download-dir-selector {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.download-dir-selector label {
+    font-weight: 500;
+    color: var(--text-secondary);
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+.download-dir-selector input {
+    flex: 1;
+    padding: 10px 14px;
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-md);
+    font-size: 14px;
+    background: var(--bg-main);
+    color: var(--text-secondary);
+    font-family: inherit;
+}
+
+.download-dir-selector input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+.btn-browse {
+    padding: 10px 16px;
+    background: var(--bg-main);
+    color: var(--text-secondary);
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-md);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+}
+
+.btn-browse:hover {
+    background: var(--border-color);
+    border-color: var(--primary-color);
 }
 
 .btn-search {
@@ -517,12 +567,15 @@ body {
     }
 
     .song-item {
-        grid-template-columns: auto 50px 1fr;
+        grid-template-columns: auto 50px 1fr auto;
         gap: 12px;
     }
 
     .song-meta {
-        display: none;
+        display: flex;
+        flex-direction: row;
+        gap: 8px;
+        align-items: center;
     }
 
     .song-actions {
@@ -555,3 +608,215 @@ body {
         font-size: 13px;
     }
 }
+
+.result-count {
+    font-size: 14px;
+    color: var(--text-muted);
+    font-weight: normal;
+}
+
+.song-size,
+.song-duration {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.downloads-section {
+    background: var(--bg-card);
+    padding: 24px;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+}
+
+.downloads-section h2 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.downloads-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.download-item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px;
+    background: var(--bg-main);
+    border-radius: var(--radius-md);
+    transition: all 0.3s ease;
+}
+
+.download-item:hover {
+    background: white;
+    box-shadow: var(--shadow-sm);
+}
+
+.download-item.completed {
+    background: #ecfdf5;
+    border-left: 4px solid var(--success-color);
+}
+
+.download-item.failed {
+    background: #fef2f2;
+    border-left: 4px solid var(--danger-color);
+}
+
+.download-item.downloading {
+    background: #eff6ff;
+    border-left: 4px solid var(--primary-color);
+}
+
+.download-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.download-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 4px;
+}
+
+.download-status {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.download-icon {
+    font-size: 24px;
+}
+
+.download-progress-bar {
+    margin-top: 8px;
+    height: 4px;
+    background: var(--border-color);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.download-progress {
+    height: 100%;
+    background: var(--primary-color);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+.btn-download:disabled {
+    background: var(--text-muted);
+    cursor: not-allowed;
+    transform: none;
+}
+
+.retry-dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+    animation: fadeIn 0.2s ease;
+}
+
+.retry-dialog {
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: var(--shadow-lg);
+    animation: slideUp 0.3s ease;
+}
+
+.retry-dialog-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--danger-color);
+    margin-bottom: 16px;
+    text-align: center;
+}
+
+.retry-dialog-content {
+    margin-bottom: 20px;
+}
+
+.retry-dialog-content p {
+    font-size: 14px;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.retry-error {
+    color: var(--danger-color);
+    font-size: 13px;
+    padding: 8px;
+    background: #fef2f2;
+    border-radius: var(--radius-sm);
+    word-break: break-all;
+}
+
+.retry-dialog-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+}
+
+.retry-btn-cancel,
+.retry-btn-confirm {
+    padding: 8px 20px;
+    border-radius: var(--radius-md);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: none;
+}
+
+.retry-btn-cancel {
+    background: var(--bg-main);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+}
+
+.retry-btn-cancel:hover {
+    background: var(--border-color);
+}
+
+.retry-btn-confirm {
+    background: var(--primary-color);
+    color: white;
+}
+
+.retry-btn-confirm:hover {
+    background: var(--primary-hover);
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+

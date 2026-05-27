@@ -1,11 +1,55 @@
 class MusicDownloaderApp {
     constructor() {
         this.searchResults = [];
-        this.init();
+        this.sources = [];
+        this.defaultSources = ['KuwoMusicClient', 'KugouMusicClient'];
+        this.downloadDir = '';
     }
 
-    init() {
+    async init() {
+        await this.loadSources();
         this.bindEvents();
+    }
+
+    async loadSources() {
+        try {
+            console.log('开始加载音乐源...');
+            const response = await fetch('/sources');
+            console.log('响应状态:', response.status);
+            const data = await response.json();
+            console.log('音乐源数据:', data);
+            this.sources = data.sources || [];
+            this.renderSources();
+        } catch (error) {
+            console.error('加载音乐源失败:', error);
+        }
+    }
+
+    renderSources() {
+        const container = document.getElementById('sourceChips');
+        container.innerHTML = this.sources.map(source => `
+            <div class="chip ${this.defaultSources.includes(source.id) ? 'active' : ''}" 
+                 data-id="${source.id}"
+                 onclick="app.toggleSource(this)">
+                <input type="checkbox" 
+                       value="${source.id}" 
+                       ${this.defaultSources.includes(source.id) ? 'checked' : ''}>
+                <span>${source.name}</span>
+            </div>
+        `).join('');
+    }
+
+    toggleSource(element) {
+        const checkbox = element.querySelector('input[type="checkbox"]');
+        const isActive = element.classList.contains('active');
+        
+        if (isActive) {
+            element.classList.remove('active');
+            checkbox.checked = false;
+        } else {
+            element.classList.add('active');
+            checkbox.checked = true;
+        }
     }
 
     bindEvents() {
@@ -17,22 +61,41 @@ class MusicDownloaderApp {
             }
         });
 
-        document.querySelectorAll('.source-chips .chip').forEach(chip => {
-            chip.addEventListener('click', () => {
-                chip.classList.toggle('active');
-                const checkbox = chip.querySelector('input[type="checkbox"]');
-                checkbox.checked = chip.classList.contains('active');
-            });
-        });
-
         document.getElementById('selectAllBtn').addEventListener('click', () => this.toggleSelectAll());
         document.getElementById('downloadSelectedBtn').addEventListener('click', () => this.downloadSelected());
+        document.getElementById('browseDirBtn').addEventListener('click', () => this.browseDirectory());
+    }
+
+    async browseDirectory() {
+        try {
+            if ('showDirectoryPicker' in window) {
+                const dirHandle = await window.showDirectoryPicker();
+                this.downloadDir = dirHandle.name;
+                document.getElementById('downloadDir').value = this.downloadDir;
+            } else {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.webkitdirectory = true;
+                input.onchange = (e) => {
+                    if (e.target.files.length > 0) {
+                        this.downloadDir = e.target.files[0].webkitRelativePath.split('/')[0];
+                        document.getElementById('downloadDir').value = this.downloadDir || '已选择文件夹';
+                    }
+                };
+                input.click();
+            }
+        } catch (error) {
+            console.log('目录选择取消或不支持');
+        }
     }
 
     getSelectedSources() {
         const sources = [];
-        document.querySelectorAll('.source-chips input[type="checkbox"]:checked').forEach(checkbox => {
-            sources.push(checkbox.value);
+        const checkboxes = document.querySelectorAll('#sourceChips input[type="checkbox"]');
+        checkboxes.forEach(checkbox => {
+            if (checkbox.checked) {
+                sources.push(checkbox.value);
+            }
         });
         return sources;
     }
@@ -54,6 +117,7 @@ class MusicDownloaderApp {
         this.showLoading('正在搜索音乐...');
         
         try {
+            console.log('发送搜索请求:', { keyword, sources });
             const response = await fetch('/search', {
                 method: 'POST',
                 headers: {
@@ -65,11 +129,15 @@ class MusicDownloaderApp {
                 })
             });
 
+            console.log('搜索响应状态:', response.status);
+
             if (!response.ok) {
-                throw new Error('搜索请求失败');
+                const errorData = await response.json();
+                throw new Error(errorData.detail || '搜索请求失败');
             }
 
             const data = await response.json();
+            console.log('搜索结果:', data);
             
             if (data.success) {
                 this.searchResults = data.results;
@@ -207,7 +275,8 @@ class MusicDownloaderApp {
             });
 
             if (!response.ok) {
-                throw new Error('创建下载任务失败');
+                const errorData = await response.json();
+                throw new Error(errorData.detail || '创建下载任务失败');
             }
 
             const data = await response.json();
@@ -222,8 +291,8 @@ class MusicDownloaderApp {
         }
     }
 
-    async waitForDownloadAndStream(taskId, song) {
-        const maxAttempts = 60;
+    async waitForDownloadAndStream(taskId, song, allowRetry = true) {
+        const maxAttempts = 120;
         
         for (let i = 0; i < maxAttempts; i++) {
             try {
@@ -234,16 +303,78 @@ class MusicDownloaderApp {
                     await this.streamDownloadFile(taskId, song);
                     return true;
                 } else if (task.status === 'failed') {
+                    if (allowRetry) {
+                        const shouldRetry = await this.showRetryDialog(song, task.message);
+                        if (shouldRetry) {
+                            this.showLoading(`正在重新下载: ${song.song_name}`);
+                            try {
+                                const retryResponse = await fetch(`/download/${taskId}/retry`, {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                    }
+                                });
+                                
+                                if (!retryResponse.ok) {
+                                    throw new Error('重新下载请求失败');
+                                }
+                                
+                                const retryData = await retryResponse.json();
+                                if (retryData.success) {
+                                    return await this.waitForDownloadAndStream(taskId, song, false);
+                                }
+                            } catch (retryError) {
+                                console.error('重新下载失败:', retryError);
+                                throw new Error(task.message);
+                            } finally {
+                                this.hideLoading();
+                            }
+                        }
+                    }
                     throw new Error(task.message);
                 }
 
-                await this.sleep(1000);
+                await this.sleep(2000);
             } catch (error) {
-                throw error;
+                if (error.message && error.message.includes('失败')) {
+                    throw error;
+                }
+                console.log(`等待下载中... (${i+1}/${maxAttempts})`);
             }
         }
 
         throw new Error('下载超时');
+    }
+
+    showRetryDialog(song, errorMessage) {
+        return new Promise((resolve) => {
+            const overlay = document.createElement('div');
+            overlay.className = 'retry-dialog-overlay';
+            overlay.innerHTML = `
+                <div class="retry-dialog">
+                    <div class="retry-dialog-title">下载失败</div>
+                    <div class="retry-dialog-content">
+                        <p>歌曲: ${song.song_name} - ${song.singers}</p>
+                        <p class="retry-error">${errorMessage || '未知错误'}</p>
+                    </div>
+                    <div class="retry-dialog-actions">
+                        <button class="retry-btn-cancel" onclick="this.closest('.retry-dialog-overlay').remove(); window._retryResult = false;">取消</button>
+                        <button class="retry-btn-confirm" onclick="this.closest('.retry-dialog-overlay').remove(); window._retryResult = true;">重新下载</button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(overlay);
+            
+            const checkResult = setInterval(() => {
+                if (window._retryResult !== undefined) {
+                    clearInterval(checkResult);
+                    const result = window._retryResult;
+                    window._retryResult = undefined;
+                    resolve(result);
+                }
+            }, 100);
+        });
     }
 
     async streamDownloadFile(taskId, song) {
@@ -328,3 +459,6 @@ class MusicDownloaderApp {
 }
 
 const app = new MusicDownloaderApp();
+document.addEventListener('DOMContentLoaded', () => {
+    app.init();
+});
