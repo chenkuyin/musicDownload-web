@@ -4,7 +4,7 @@
 #
 
 app = 'musicdownload-web'
-primary_region = 'ams'
+primary_region = 'hkg'
 
 [build]
 
